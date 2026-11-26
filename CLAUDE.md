@@ -2,9 +2,10 @@
 Version: v1.0 - 2026-11-26
 Changes: First version. Thin read-order file for the viewer worker repo.
 Previous: none
-Standard: White House v0.6
+Standard: White House v0.6 (shape A product repo; hub = Csmittee/janis-product-design)
 
 Cloudflare worker that serves the Janis product viewer and reads STL files from the R2 bucket `janis-design-models`.
+This is a light product repo. General rules live in the hub; never copy them here. No docs/wh/, cc_rules.md, knowledge.map, skills or WH_STANDARD.md in this repo.
 
 ## Read order
 1. This file.
