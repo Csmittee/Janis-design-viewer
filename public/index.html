@@ -629,7 +629,7 @@
     </div>
 
     <div class="wasm-notice">
-      <b style="color:var(--gold)">STL mode:</b> model loads from <code style="color:var(--gold)">/models/VM-01-v36.stl</code> — instant, no WASM.<br>
+      <b style="color:var(--gold)">STL mode:</b> models load from the R2 bucket — instant, no WASM.<br>
       <b style="color:var(--text-dim)">WASM mode:</b> [⟳ Re-render] applies slider/toggle changes live once WASM engine is available.
     </div>
 
@@ -711,7 +711,7 @@ const PROJECTS = {
     label: 'VM-01 Vending Machine',
     version: 'v58',
     status: 'Manifold clean',
-    modelsFolder: 'VM-01',
+    modelsFolder: 'vm-01',
     params: [
       { id: 'total_w',      label: 'Width (mm)',      value: 640, min: 500, max: 800, step: 10, locked: false },
       { id: 'total_h',      label: 'Height (mm)',     value: 700, min: 600, max: 900, step: 10, locked: true  },
@@ -726,9 +726,6 @@ const PROJECTS = {
       { id: 'show_shell_back',  label: 'Back Shell',  default: true },
       { id: 'show_shell_top',   label: 'Top Shell',   default: true },
     ],
-    stl:     'https://api.janishammer.com/models/VM-01-v38-full.stl',
-    stlOpen: 'https://api.janishammer.com/models/VM-01-v38-std.stl',
-    stlC2:   'https://api.janishammer.com/models/VM-01-v38-C2.stl',
     components: [
       { id: 'outer_shell',    label: 'Outer Shell',    default: true, match: 'translate([0, 0, leg_h]) outer_shell_debug();' },
       { id: 'spring_tray',   label: 'Spring Trays',   default: true, match: 'for (t = [0:tray_count-1]) spring_tray(t);' },
@@ -1212,7 +1209,7 @@ rear_service_door();
     label: 'VM-02 Vending Machine',
     version: 'v2',
     status: 'Manifold clean — paused (Janis-confirmed, 2026-07-10)',
-    modelsFolder: 'VM-02',
+    modelsFolder: 'vm-02',
     params: [
       { id: 'tray_count',    label: 'Tray Count',                    value: 3,   min: 1,  max: 5, step: 1,    locked: false },
       { id: 'product_w',     label: 'Product Compartment Width (mm)', value: 422, min: 422, max: 422, step: 1, locked: true },
@@ -1279,7 +1276,7 @@ rear_service_door();
       { id: 'grip_od',          label: 'Grip Bar OD (mm)',        value: 32,   min: 32,   max: 32,   step: 1,  locked: true  },
     ],
     toggles: [],
-    stl: 'https://api.janishammer.com/models/PR-01-v31.stl',
+    modelsFolder: 'pr-01',
     components: [
       { id: 'bed',          label: 'Bed Frame + Surface', default: true, match: 'bed_assembly();' },
       { id: 'wood_sockets', label: 'Wood Sockets',        default: true, match: 'if (show_wood_sockets) pole_wood_socket(cx, cy);' },
@@ -1295,13 +1292,13 @@ rear_service_door();
     label: 'BBQ-01 Offset Smoker',
     version: 'v20',
     status: 'Lid/rib/CB1/tray mechanism locked (PR #172 merged) — CB1 counterweight tuning open',
-    modelsFolder: 'BBQ-01',
+    modelsFolder: 'bbq-01',
     // STL-mode project (scad: null) — every param/toggle below documents
     // the real live Customizer control in BBQ-offset-smoker-base-v20.scad
     // / BBQ-chambers-v26.scad / BBQ-understructure-v19.scad (names/ranges
     // read live from those files, not guessed) for reference even though
     // there is no in-browser WASM re-render yet. Views come from whatever
-    // .stl files exist in public/models/BBQ-01/ (dynamic picker, see
+    // .stl files exist in the R2 folder bbq-01/ (dynamic picker, see
     // .claude/SKILL_viewer_update.md's "PROCEDURE — JANIS ... NEW" section
     // — same flow already used by VM-01/VM-02, no cc prompt needed to
     // add/remove/rename a view).
@@ -1522,16 +1519,13 @@ function updateAxisIndicator() {
 }
 
 // ─────────────────────────────
-// DYNAMIC MODEL FOLDER (GitHub Contents API discovery)
+// DYNAMIC MODEL FOLDER (worker listing of the R2 bucket)
 // ─────────────────────────────
-// Lets Janis drop any freely-named .stl into public/models/<folder>/ on
-// the Satu backend repo and have it show up here with zero code change —
-// the listing is fetched fresh every call, never hardcoded. The GitHub
-// API is used ONLY to discover what filenames currently exist; the
-// actual mesh data always loads from the already-working
-// api.janishammer.com Cloudflare path, never from GitHub directly.
-
-const SATU_BACKEND_REPO = 'Csmittee/Satu-vending-backend';
+// Lets Janis drag any freely-named .stl into the R2 folder <folder>/ and
+// have it show up here with zero code change — the listing is fetched
+// fresh every call, never hardcoded. The worker's /api/models lists the
+// filenames; the mesh data loads from the worker's /models/<folder>/<file>.
+// Same origin, relative URLs only.
 
 function prettifyFilename(filename) {
   return filename
@@ -1541,49 +1535,40 @@ function prettifyFilename(filename) {
 }
 
 // Returns [{filename, label, url}] for every .stl in
-// public/models/<folderName>/ — throws with a clear message on 404
-// (folder doesn't exist yet), 403/429 (unauthenticated rate limit, 60/hr
-// per IP — GitHub uses either code depending on which limit is hit), or
-// any other network/HTTP failure, so callers can show the error in the
-// UI instead of failing silently.
+// the R2 folder <folderName>/ — throws with a clear message on a network
+// failure or any non-200 answer, so callers can show the error in the UI
+// instead of failing silently. A 404 means "folder has nothing yet" and
+// returns an empty list, not an error.
 async function fetchModelFolder(folderName) {
-  const apiUrl = `https://api.github.com/repos/${SATU_BACKEND_REPO}/contents/public/models/${folderName}`;
+  const apiUrl = `/api/models?folder=${encodeURIComponent(folderName)}`;
   let resp;
   try {
     resp = await fetch(apiUrl);
   } catch (err) {
-    throw new Error(`Network error reaching GitHub API: ${err.message}`);
+    throw new Error(`Network error reaching the model list: ${err.message}`);
   }
   if (!resp.ok) {
     if (resp.status === 404) {
-      // Git can't track an empty directory, so "folder missing" and "folder
-      // exists but has nothing uploaded yet" are the same state from the
-      // Contents API's point of view — treat both as "no files yet" (an
-      // empty list, not an error) so a brand-new project's first-ever
-      // upload doesn't read as a broken API call.
+      // An empty or unknown folder is the same state to the user: "no
+      // files yet" (an empty list, not an error), so a brand-new
+      // product's first upload doesn't read as a broken call.
       return [];
     }
-    if (resp.status === 403 || resp.status === 429) {
-      throw new Error('GitHub API rate limit reached (60 unauthenticated requests/hour per IP) — try again later');
-    }
-    throw new Error(`GitHub API error ${resp.status} fetching public/models/${folderName}/`);
+    throw new Error(`Model list error ${resp.status} for R2 folder ${folderName}/`);
   }
   const entries = await resp.json();
-  return entries
-    .filter(e => e.type === 'file' && /\.stl$/i.test(e.name))
-    .map(e => ({
-      filename: e.name,
-      label: prettifyFilename(e.name),
-      url: `https://api.janishammer.com/models/${folderName}/${e.name}`
-    }));
+  return entries.map(e => ({
+    filename: e.name,
+    label: prettifyFilename(e.name),
+    url: `/models/${folderName}/${encodeURIComponent(e.name)}`
+  }));
 }
 
 // ─────────────────────────────
-// MODEL FOLDER CACHE (fixes the real 60/hr unauthenticated GitHub API
-// cap being hit during normal repeated project-switching/testing)
+// MODEL FOLDER CACHE (stops a new listing call on every project switch)
 // ─────────────────────────────
 const modelFolderCache = new Map(); // folderName -> { files, timestamp }
-const MODEL_FOLDER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — short enough a fresh upload shows up on its own soon, long enough to stop hammering GitHub on every project switch
+const MODEL_FOLDER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — short enough a fresh upload shows up on its own soon, long enough to skip a listing call on every project switch
 
 // Cache-aware wrapper around fetchModelFolder(). Always resolves (never
 // throws) with {files, error, stale}: `files` is the best available list
@@ -1676,7 +1661,7 @@ function switchProject(id) {
 
   // modelsFolder projects: buildVisibilityPanel() -> buildModelFolderPicker()
   // already owns loading the first discovered file, asynchronously, once
-  // the GitHub API listing resolves. Skip this fallback chain entirely for
+  // the folder listing resolves. Skip this fallback chain entirely for
   // those projects — firing loadSTL(proj.stlOpen) here too would race the
   // folder-picker's own async load (whichever resolves last silently wins).
   if (proj.modelsFolder) {
@@ -1752,7 +1737,7 @@ function buildVisibilityPanel() {
   panel.innerHTML = '';
 
   // Dynamic model-folder mode: freely-named STL files discovered live via
-  // the GitHub Contents API, per-project public/models/<folder>/ listing.
+  // the worker's /api/models, per-product R2 <folder>/ listing.
   // Takes priority over the legacy fixed stl/stlOpen/stlC2 cycle button
   // below — a project keeps both configured during migration (see
   // PROJECTS['VM-01']), modelsFolder wins when present. Checked FIRST,
@@ -1864,9 +1849,9 @@ function buildModelFolderPicker(panel, proj, { force = false } = {}) {
         // thing to git). A normal, expected first-upload state, not a
         // failure — informational styling, no warning icon.
         msgEl.style.cssText = 'color:var(--text-dim);font-size:11px;line-height:1.5';
-        msgEl.textContent = `No .stl files uploaded yet in public/models/${proj.modelsFolder}/.`;
+        msgEl.textContent = `No .stl files uploaded yet in R2 folder ${proj.modelsFolder}/.`;
         document.getElementById('overlay-title').textContent = proj.label;
-        document.getElementById('overlay-sub').textContent = `No models uploaded yet — add an .stl to public/models/${proj.modelsFolder}/`;
+        document.getElementById('overlay-sub').textContent = `No models uploaded yet — add an .stl to R2 folder ${proj.modelsFolder}/`;
       }
       overlay.style.display = 'flex';
       panel.appendChild(msgEl);
@@ -1886,7 +1871,7 @@ function buildModelFolderPicker(panel, proj, { force = false } = {}) {
 
     const note = document.createElement('div');
     note.style.cssText = 'color:var(--text-dim);font-size:10px;margin-bottom:6px;line-height:1.5';
-    note.textContent = `${files.length} view${files.length === 1 ? '' : 's'} — public/models/${proj.modelsFolder}/`
+    note.textContent = `${files.length} view${files.length === 1 ? '' : 's'} — R2 folder ${proj.modelsFolder}/`
       + (stale ? ' (cached)' : '');
     panel.appendChild(note);
 
@@ -2192,7 +2177,7 @@ async function renderScad() {
   }
 }
 
-// Local path is tried first — host openscad.js + openscad.wasm in public/wasm/ on Satu.
+// Local path is tried first — host openscad.js + openscad.wasm in public/wasm/ of this worker.
 // CDN fallbacks follow in case local files are not present.
 const WASM_CDN_CANDIDATES = [
   '/wasm/openscad.js',
@@ -2624,7 +2609,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireColorPicker();
   switchProject(activeProject);
   log('Janis Product Design Viewer v1.3 ready');
-  log('VM-01: loading STL from api.janishammer.com/models/VM-01-v36.stl...');
+  log('VM-01: loading model list from the R2 bucket...');
 });
 </script>
 </body>
