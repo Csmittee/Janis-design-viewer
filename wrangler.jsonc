@@ -1,0 +1,25 @@
+{
+  // Worker name must equal the worker already created in the dashboard,
+  // or Workers Builds fails.
+  "name": "janis-design-viewer",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-26",
+
+  // Viewer page. The worker runs first for the API and model paths so they
+  // never fall through to static files.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/models/*"]
+  },
+
+  // STL files. Read only: the worker never writes or deletes.
+  "r2_buckets": [
+    { "binding": "MODELS", "bucket_name": "janis-design-models" }
+  ],
+
+  // The only way in is the custom domain the owner adds in the dashboard,
+  // behind the login. These two other addresses would skip it, so both off.
+  "workers_dev": false,
+  "preview_urls": false
+}
